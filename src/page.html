@@ -1,0 +1,156 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one centred arcade cabinet (marquee, screen, control deck) that stacks at phone width. Single dark look by design. */
+:root {
+  --void: #0b0910;
+  --cabinet: #17121f;
+  --rim: #2c2338;
+  --key: #3a2f4a;
+  --ink: #ece5d3;
+  --muted: #a49ab2;
+  --amber: #ffc93a;
+  --ember: #8a3416;
+  --display: "Press Start 2P", "Courier New", monospace;
+  --body: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+body {
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 28px;
+  touch-action: manipulation;
+}
+.cab {
+  width: min(100%, max(320px, calc((100svh - 190px) * 4 / 3)));
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.marquee { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(15px, 2.6vw, 22px);
+  font-weight: 400;
+  color: var(--amber);
+  letter-spacing: 0.04em;
+  text-shadow: 3px 3px 0 var(--ember);
+  text-wrap: balance;
+}
+.tag { margin: 0; color: var(--muted); font-size: 13px; }
+.screen {
+  background: var(--cabinet);
+  border: 2px solid var(--rim);
+  border-radius: 6px;
+  padding: clamp(6px, 1.4vw, 14px);
+}
+canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  background: #000000;
+  image-rendering: pixelated;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+canvas:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.deck { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; color: var(--muted); font-size: 13px; }
+.deck span { display: inline-flex; align-items: center; gap: 6px; }
+kbd {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--key);
+  border-bottom: 2px solid #000000;
+  border-radius: 3px;
+  padding: 5px 6px 4px;
+}
+.deck .opts { margin-left: auto; display: inline-flex; gap: 8px; }
+button {
+  font-family: var(--display);
+  font-size: 10px;
+  color: var(--ink);
+  background: var(--key);
+  border: 0;
+  border-bottom: 3px solid #000000;
+  border-radius: 6px;
+  padding: 9px 12px 7px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button:hover { background: #46395a; }
+button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.play { display: grid; grid-template-areas: "screen"; gap: 10px; user-select: none; -webkit-user-select: none; }
+.screen { grid-area: screen; min-width: 0; }
+.pad-l, .pad-r { display: none; gap: 10px; }
+.pad-l { grid-area: padl; grid-template-columns: 1fr 1fr; }
+.pad-r { grid-area: padr; }
+.play button { min-height: 72px; font-size: 14px; touch-action: none; -webkit-touch-callout: none; }
+.play button.on { background: #5a4a72; transform: translateY(2px); border-bottom-width: 1px; }
+.play .jump { background: #6b3a1c; }
+.play .jump.on { background: #8a4c24; }
+canvas { -webkit-touch-callout: none; }
+.notes { color: var(--muted); font-size: 12.5px; max-width: 68ch; margin: 0; }
+@media (pointer: coarse) {
+  .pad-l, .pad-r { display: grid; }
+  .play { grid-template-areas: "screen screen" "padl padr"; grid-template-columns: 1.6fr 1fr; }
+  .deck .keys { display: none; }
+  .deck .opts { margin-left: 0; flex-wrap: wrap; }
+}
+/* Phone held sideways: thumbs either side of the screen, nothing else competing for height. */
+@media (pointer: coarse) and (orientation: landscape) {
+  body { padding-block: 8px; }
+  .cab { width: 100%; gap: 8px; }
+  .marquee, .notes { display: none; }
+  .play { grid-template-areas: "padl screen padr"; grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr); align-items: center; }
+  .screen { width: min(62vw, calc((100svh - 104px) * 4 / 3 + 16px)); padding: 6px; }
+  .pad-l { grid-template-columns: 1fr 1fr; }
+  .play button { min-height: min(46svh, 180px); }
+  .deck { justify-content: center; }
+  .deck button { padding: 7px 10px 5px; }
+}
+</style>
+
+<div class="cab">
+  <header class="marquee">
+    <h1>MANIC ANTEATER</h1>
+    <p class="tag">10 rooms. Every ant hill. One portal.</p>
+  </header>
+  <div class="play">
+    <div class="pad-l" aria-label="Walk controls">
+      <button type="button" data-k="left" aria-label="Walk left">&#9664;</button>
+      <button type="button" data-k="right" aria-label="Walk right">&#9654;</button>
+    </div>
+    <div class="screen">
+      <canvas id="screen" tabindex="0" aria-label="Manic Anteater game screen"></canvas>
+    </div>
+    <div class="pad-r" aria-label="Jump control">
+      <button type="button" class="jump" data-k="jump">JUMP</button>
+    </div>
+  </div>
+  <div class="deck">
+    <span class="keys"><kbd>&larr;</kbd><kbd>&rarr;</kbd> walk</span>
+    <span class="keys"><kbd>SPACE</kbd> or <kbd>&uarr;</kbd> jump</span>
+    <span class="keys"><kbd>ENTER</kbd> start</span>
+    <span class="keys"><kbd>P</kbd> pause</span>
+    <span class="opts">
+      <button type="button" id="btn-music" aria-pressed="true">Music on</button>
+      <button type="button" id="btn-pause">Pause</button>
+      <button type="button" id="btn-full" hidden>Full screen</button>
+    </span>
+  </div>
+  <p class="notes">Jumps commit you to an arc, and walking off a ledge drops you straight down. Fall more than eight tiles and you won't get up again. Your energy drains all the time, and whatever's left when you reach the portal is added to your score. After the tenth room the game loops with faster beasts.</p>
+</div>
