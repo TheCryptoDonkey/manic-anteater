@@ -8,13 +8,14 @@ A Manic Miner-style platformer for the browser. You are an anteater: slurp up ev
 
 | Action | Keyboard | Phone |
 |---|---|---|
-| Walk | ← → or A D | ◀ ▶ |
-| Jump | Space, ↑ or W | JUMP (hold ◀ or ▶ to jump sideways) |
-| Start | Enter | Tap the screen or JUMP |
-| Pause | P | Pause |
-| Music | M | Music on/off |
+| Walk | ← → or A D | Thumb down anywhere on the left half, slide left or right |
+| Jump | Space, ↑ or W | Tap the right half, or flick up with the left thumb |
+| Start | Enter | Tap the right half |
+| Pause | P | Pause button |
+| Music | M | Music button |
+| Warp to the next level | N, or double-click the level name | Double-tap the level name |
 
-On the title screen, ← → picks the starting level. The phone walk pad is one surface: slide your thumb between the halves without lifting, and swipe up on it to jump in the direction you're walking. Gamepads work as well (stick or d-pad to walk, A or B to jump, Start to pause).
+On the title screen, ← → picks the starting level (on a phone, tap the left half). On a phone the whole screen is the controller, so the game can fill the display: the left half is a floating stick that appears under your thumb, and the right half jumps. Hold a direction and tap jump, or flick up, to jump sideways. Gamepads work as well (stick or d-pad to walk, A or B to jump, Start to pause, Select to warp).
 
 ## Install as an app
 
@@ -24,7 +25,7 @@ Manic Anteater is a progressive web app: once installed it opens full screen, wo
 - **iPhone and iPad (Safari):** tap **Share**, then **Add to Home Screen**.
 - **Desktop (Chrome or Edge):** use the install icon in the address bar.
 
-The screen fits itself to the device. Upright, the playfield runs edge to edge with the thumb zones underneath. Sideways, the zones sit either side, and the screen switches to a 16:9 layout with a compact status strip whenever that makes the playfield bigger. Wide desktop windows get the same treatment.
+The screen fits itself to the device. Upright, the playfield runs edge to edge across the top and the empty space below is for your thumbs. Sideways, the playfield takes the full height, and the screen switches to a 16:9 layout with a compact status strip whenever that makes the playfield bigger. Wide desktop windows get the same treatment.
 
 ## Rules
 

@@ -190,7 +190,7 @@
   let state = 'title', stateT = 0, tick = 0, paused = false;
   let levelIdx = 0, startLevel = 0, lap = 0, L = null, P = null;
   let score = 0, hi = 0, lives = 3, nextLife = 10000, energy = 1, portalOpen = false, tallyWait = 0;
-  let slurp = 0, slurpTarget = null, parts = [];
+  let slurp = 0, slurpTarget = null, parts = [], warped = false;
   const input = { left: false, right: false, jump: false };
   const keys = { left: false, right: false, jump: false };
   const touchIn = { left: false, right: false, jump: false };
@@ -203,7 +203,7 @@
   function loadLevel() {
     L = parseLevel(LEVELS[levelIdx], lap);
     P = makePlayer(L);
-    energy = 1; parts = []; slurp = 0; slurpTarget = null; tallyWait = 0;
+    energy = 1; parts = []; slurp = 0; slurpTarget = null; tallyWait = 0; warped = false;
     tiles = buildTiles(L.pal);
     portalOpen = L.hills.length === 0;
     state = 'enter'; stateT = 0;
@@ -435,9 +435,9 @@
     text('SLURP UP EVERY ANT HILL,', 128, Y.l1, '#ffffff', 'center');
     text('THEN DIVE INTO THE PORTAL.', 128, Y.l2, '#ffffff', 'center');
     if (Y.l3 > 0) text('DODGE THE BEASTS. MIND THE DROP.', 128, Y.l3, '#a0a0b0', 'center');
-    text(`START LEVEL  < ${pad2(startLevel + 1)} >`, 128, Y.start, '#40ffff', 'center');
+    text(touchUI ? `START LEVEL ${pad2(startLevel + 1)} (TAP LEFT)` : `START LEVEL  < ${pad2(startLevel + 1)} >`, 128, Y.start, '#40ffff', 'center');
     text(LEVELS[startLevel].name.toUpperCase(), 128, Y.name, '#3aa0a0', 'center');
-    const prompt = touchUI ? 'TAP JUMP TO PLAY' : 'PRESS ENTER OR TAP TO PLAY';
+    const prompt = touchUI ? 'TAP RIGHT HALF TO PLAY' : 'PRESS ENTER OR TAP TO PLAY';
     if (Math.floor(tick / 30) % 2 === 0 || reduceMotion) text(prompt, 128, Y.press, '#ffff40', 'center');
     text('HI-SCORE ' + pad6(hi), 128, Y.hi, '#ff8040', 'center');
   }
@@ -472,7 +472,7 @@
     const bob = reduceMotion ? 0 : Math.round(Math.sin(tick / 8) * 3);
     ctx.drawImage(ANT.R[Math.floor(tick / 8) % 2], 110, 50 + bob, 36, 20);
     text('BONUS 5000', 128, 84, '#40ff40', 'center');
-    text(`${touchUI ? 'JUMP' : 'ENTER'}: LAP ${lap + 2}, FASTER BEASTS`, 128, 104, '#40ffff', 'center');
+    text(`${touchUI ? 'TAP' : 'ENTER'}: LAP ${lap + 2}, FASTER BEASTS`, 128, 104, '#40ffff', 'center');
     drawStatus();
   }
   function render() {
@@ -485,9 +485,9 @@
       ctx.fillStyle = reduceMotion ? 'rgba(255,40,40,0.35)' : (Math.floor(stateT / 4) % 2 ? 'rgba(255,255,255,0.55)' : 'rgba(255,0,0,0.35)');
       ctx.fillRect(0, 0, W, FIELD_H);
     }
-    if (state === 'enter') panel([[L.name.toUpperCase(), '#ffff40'], [`LEVEL ${levelIdx + 1} OF 10`, '#ffffff'], [Math.floor(stateT / 8) % 2 ? 'GET READY' : '', '#40ffff']], 40);
+    if (state === 'enter') panel([[L.name.toUpperCase(), '#ffff40'], [`LEVEL ${levelIdx + 1} OF 10`, '#ffffff'], [Math.floor(stateT / 8) % 2 ? (warped ? 'WARP!' : 'GET READY') : '', warped ? '#ff40ff' : '#40ffff']], 40);
     if (state === 'tally' && energy <= 0) panel([['LEVEL CLEARED!', '#40ff40']], 52);
-    if (paused) panel([['PAUSED', '#ffff40'], [touchUI ? 'TAP JUMP TO RESUME' : 'P OR ENTER TO RESUME', '#ffffff']], 46);
+    if (paused) panel([['PAUSED', '#ffff40'], [touchUI ? 'TAP TO RESUME' : 'P OR ENTER TO RESUME', '#ffffff']], 46);
     drawStatus();
   }
 
@@ -503,22 +503,22 @@
   }
   function layout() {
     touchUI = matchMedia('(pointer: coarse)').matches;
+    unzoom();
     const vw = window.innerWidth, vh = window.innerHeight, I = insets();
     const land = vw > vh;
     root.classList.toggle('touch', touchUI);
     root.classList.toggle('land', touchUI && land);
     root.classList.toggle('port', touchUI && !land);
     root.classList.toggle('installed', isStandalone());
+    const sl = Math.max(6, I.l), sr = Math.max(6, I.r), st = Math.max(6, I.t), sb = Math.max(6, I.b);
     let aw, ah;
     if (touchUI && land) {
-      const side = Math.round(Math.min(190, Math.max(100, vw * 0.14)));
-      root.style.setProperty('--side', side + 'px');
-      aw = vw - Math.max(6, I.l) - Math.max(6, I.r) - 2 * side - 16;
-      ah = vh - Math.max(6, I.t) - Math.max(6, I.b);
+      // the whole screen is the controller, so the game takes the full height; keep a slim column for the icons
+      aw = vw - sl - sr - 2 * 46;
+      ah = vh - st - sb;
     } else if (touchUI) {
-      const controls = Math.max(220, vh * 0.3);
-      aw = vw - Math.max(6, I.l) - Math.max(6, I.r);
-      ah = vh - Math.max(6, I.t) - Math.max(6, I.b) - controls - 52;
+      aw = vw - sl - sr;
+      ah = vh - st - sb - Math.max(170, vh * 0.26) - 48;
     } else {
       aw = Math.min(1100, vw - 32) - 24;
       ah = vh - 210;
@@ -530,6 +530,14 @@
     const s = MODE === 'wide' ? sWide : sTall;
     cv.style.width = Math.floor(256 * s) + 'px';
     cv.style.height = Math.floor(H * s) + 'px';
+  }
+  // iOS can still zoom from a stray pinch; re-asserting the viewport snaps it back to 1x.
+  const vpMeta = document.querySelector('meta[name="viewport"]');
+  function unzoom() {
+    if (!vpMeta || !window.visualViewport || visualViewport.scale <= 1.01) return;
+    const c = vpMeta.getAttribute('content');
+    vpMeta.setAttribute('content', c + ', minimum-scale=1');
+    setTimeout(() => vpMeta.setAttribute('content', c), 60);
   }
   let layoutQueued = false;
   function queueLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(() => { layoutQueued = false; layout(); }); }
@@ -547,57 +555,101 @@
     if (e.code === 'Enter' || (e.code === 'Space' && state !== 'play' && state !== 'enter')) { onStart(); e.preventDefault(); }
     else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
     else if (e.code === 'KeyM') toggleMusic();
+    else if (e.code === 'KeyN') warp();
     if (state === 'title' && (k === 'left' || k === 'right')) changeStart(k === 'left' ? -1 : 1);
   });
   addEventListener('keyup', e => { const k = KEYS[e.code]; if (k) keys[k] = false; });
 
   // ---------- input: touch ----------
-  // The walk pad is one surface: slide between halves without lifting, swipe up to jump in that direction.
-  const moveEl = document.getElementById('pad-move'), jumpEl = document.getElementById('pad-jump');
-  const halves = { l: moveEl.querySelector('.l'), r: moveEl.querySelector('.r') };
+  // On touch screens the whole screen is the controller. Left half: a floating stick (put a thumb down
+  // anywhere, slide left or right to walk, flick up to jump). Right half: jump.
+  const appEl = document.getElementById('app');
+  const stick = document.getElementById('stick'), knob = stick.querySelector('.knob');
+  const hintL = document.getElementById('hint-move'), hintR = document.getElementById('hint-jump');
   const movePtr = new Map(), jumpPtr = new Set();
-  const dirAt = e => { const r = moveEl.getBoundingClientRect(); return e.clientX < r.left + r.width / 2 ? -1 : 1; };
+  const DEAD = 9, REACH = 44;
   function syncMove() {
-    let l = false, r = false;
-    for (const p of movePtr.values()) { if (p.dir < 0) l = true; else r = true; }
-    touchIn.left = l; touchIn.right = r;
-    halves.l.classList.toggle('on', l); halves.r.classList.toggle('on', r);
+    // the newest thumb decides, so a touch the browser forgot about can never cancel out the live one
+    let live = null;
+    for (const p of movePtr.values()) live = p;
+    const dir = live ? live.dir : 0;
+    touchIn.left = dir < 0; touchIn.right = dir > 0;
+    stick.hidden = !live;
+    if (live) {
+      stick.style.transform = `translate(${Math.round(live.ox - 36)}px, ${Math.round(live.oy - 36)}px)`;
+      knob.style.transform = `translate(${Math.round(live.dx * 0.6)}px, 0)`;
+    }
+    hintL.classList.toggle('on', !!live);
   }
-  moveEl.addEventListener('pointerdown', e => {
-    e.preventDefault(); ensureAudio();
-    try { moveEl.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
-    const d = dirAt(e);
-    movePtr.set(e.pointerId, { dir: d, y0: e.clientY });
-    if (state === 'title') changeStart(d);
-    syncMove();
+  function syncJump() { touchIn.jump = jumpPtr.size > 0; hintR.classList.toggle('on', touchIn.jump); }
+  const onUI = e => !!(e.target.closest && e.target.closest('button, a, .toast'));
+  appEl.addEventListener('pointerdown', e => {
+    if (!touchUI || e.pointerType === 'mouse' || onUI(e)) return;
+    e.preventDefault(); ensureAudio(); unzoom();
+    if (warpTap(e)) return;
+    const left = e.clientX < window.innerWidth / 2;
+    if (state === 'title') { if (left) changeStart(1); else onStart(); return; }
+    if (paused || (state !== 'play' && state !== 'enter')) { onStart(); return; }
+    try { appEl.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
+    if (left) { movePtr.set(e.pointerId, { ox: e.clientX, oy: e.clientY, dx: 0, dir: 0 }); syncMove(); }
+    else { if (state === 'enter') state = 'play'; jumpPtr.add(e.pointerId); syncJump(); }
   });
-  moveEl.addEventListener('pointermove', e => {
+  appEl.addEventListener('pointermove', e => {
     const p = movePtr.get(e.pointerId);
     if (!p) return;
-    p.dir = dirAt(e);
-    if (p.y0 - e.clientY > 28) { if (state === 'play' && !paused) swipePulse = 6; p.y0 = e.clientY; }
-    else if (e.clientY > p.y0) p.y0 = e.clientY;
+    let dx = e.clientX - p.ox;
+    if (Math.abs(dx) > REACH) { p.ox = e.clientX - Math.sign(dx) * REACH; dx = Math.sign(dx) * REACH; }
+    p.dx = dx; p.dir = dx > DEAD ? 1 : dx < -DEAD ? -1 : 0;
+    if (p.oy - e.clientY > 30) { if (state === 'play' && !paused) swipePulse = 6; p.oy = e.clientY; }
+    else if (e.clientY > p.oy) p.oy = e.clientY;
     syncMove();
   });
-  const moveUp = e => { movePtr.delete(e.pointerId); syncMove(); };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => moveEl.addEventListener(t, moveUp));
-  jumpEl.addEventListener('pointerdown', e => {
-    e.preventDefault(); ensureAudio();
-    if (paused || (state !== 'play' && state !== 'enter')) { onStart(); return; }
-    if (state === 'enter') state = 'play';
-    try { jumpEl.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
-    jumpPtr.add(e.pointerId); touchIn.jump = true; jumpEl.classList.add('on');
+  const lift = e => { if (movePtr.delete(e.pointerId)) syncMove(); if (jumpPtr.delete(e.pointerId)) syncJump(); };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => appEl.addEventListener(t, lift));
+  // belt and braces: once the last finger leaves the glass, nothing can still be held down
+  const allUp = e => { if (!e.touches || e.touches.length === 0) { movePtr.clear(); jumpPtr.clear(); syncMove(); syncJump(); } };
+  document.addEventListener('touchend', allUp);
+  document.addEventListener('touchcancel', allUp);
+  // stop iOS pinch and double-tap zoom from hijacking the game
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault()));
+  document.addEventListener('touchstart', e => { if (touchUI && !onUI(e)) e.preventDefault(); }, { passive: false });
+  document.addEventListener('touchmove', e => { if (touchUI) e.preventDefault(); }, { passive: false });
+  document.addEventListener('dblclick', e => e.preventDefault());
+
+  // Warp cheat: double-tap (or double-click) the level name in the status bar, or press N.
+  let lastNameTap = 0;
+  function onName(cx, cy) {
+    const r = cv.getBoundingClientRect();
+    if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) return false;
+    const y = (cy - r.top) / r.height * H;
+    return MODE === 'wide' ? y >= 128 : (y >= 127 && y < 138);
+  }
+  function warpTap(e) {
+    if (!pausable() || !onName(e.clientX, e.clientY)) return false;
+    const now = performance.now();
+    if (now - lastNameTap < 420) { lastNameTap = 0; warp(); return true; }
+    lastNameTap = now;
+    return false;
+  }
+  function warp() {
+    if (!pausable()) return;
+    paused = false;
+    levelIdx = (levelIdx + 1) % LEVELS.length;
+    loadLevel(); warped = true;
+    sfx.open(); syncButtons();
+  }
+  cv.addEventListener('pointerdown', e => {
+    if (touchUI && e.pointerType !== 'mouse') return;
+    cv.focus({ preventScroll: true });
+    if (warpTap(e)) return;
+    if (state !== 'play' || paused) onStart();
   });
-  const jumpUp = e => { jumpPtr.delete(e.pointerId); touchIn.jump = jumpPtr.size > 0; jumpEl.classList.toggle('on', touchIn.jump); };
-  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => jumpEl.addEventListener(t, jumpUp));
-  [moveEl, jumpEl].forEach(el => el.addEventListener('contextmenu', e => e.preventDefault()));
-  cv.addEventListener('pointerdown', () => { cv.focus({ preventScroll: true }); if (state !== 'play' || paused) onStart(); });
 
   // ---------- input: gamepad ----------
-  let padPrev = { start: false, jump: false, left: false, right: false };
+  let padPrev = { start: false, select: false, jump: false, left: false, right: false };
   function pollPad() {
     padIn.left = padIn.right = padIn.jump = false;
-    let start = false;
+    let start = false, select = false;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const gp of pads) {
       if (!gp) continue;
@@ -607,20 +659,22 @@
       padIn.right = padIn.right || ax > 0.45 || b(15);
       padIn.jump = padIn.jump || b(0) || b(1) || b(12);
       start = start || b(9);
+      select = select || b(8);
     }
+    if (select && !padPrev.select) warp();
     if (start && !padPrev.start) { if (paused || !pausable() || state === 'enter') onStart(); else togglePause(); }
     if (padIn.jump && !padPrev.jump && (state !== 'play' || paused) && state !== 'enter') onStart();
     if (state === 'title') {
       if (padIn.left && !padPrev.left) changeStart(-1);
       if (padIn.right && !padPrev.right) changeStart(1);
     }
-    padPrev = { start, jump: padIn.jump, left: padIn.left, right: padIn.right };
+    padPrev = { start, select, jump: padIn.jump, left: padIn.left, right: padIn.right };
   }
 
   // ---------- focus, pausing and wake lock ----------
   function releaseAll() {
     keys.left = keys.right = keys.jump = false;
-    movePtr.clear(); jumpPtr.clear(); syncMove(); touchIn.jump = false; jumpEl.classList.remove('on');
+    movePtr.clear(); jumpPtr.clear(); syncMove(); syncJump();
   }
   function autoPause() { releaseAll(); if (state === 'play') { paused = true; syncButtons(); } }
   addEventListener('blur', autoPause);
@@ -645,7 +699,7 @@
     if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
     root.requestFullscreen({ navigationUI: 'hide' }).catch(() => { fullBtn.hidden = true; });
   });
-  document.addEventListener('fullscreenchange', () => { fullBtn.textContent = document.fullscreenElement ? 'Exit full' : 'Full screen'; queueLayout(); });
+  document.addEventListener('fullscreenchange', () => { syncButtons(); queueLayout(); });
   let installEvt = null;
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installBtn.hidden = false; });
   installBtn.addEventListener('click', () => {
@@ -654,10 +708,22 @@
     Promise.resolve(installEvt.userChoice).catch(() => {}).then(() => { installEvt = null; installBtn.hidden = true; });
   });
   addEventListener('appinstalled', () => { installBtn.hidden = true; });
+  const ICON = {
+    music: '<path d="M6 2v8.3A2.5 2.5 0 1 0 8 12.7V5h5V2z"/>',
+    mute: '<path d="M6 2v8.3A2.5 2.5 0 1 0 8 12.7V5h5V2z"/><path d="M1 1l14 14" stroke="currentColor" stroke-width="1.8"/>',
+    pause: '<path d="M3 2h3.5v12H3zM9.5 2H13v12H9.5z"/>',
+    play: '<path d="M4 2l10 6-10 6z"/>',
+    full: '<path d="M1 1h5v2H3v3H1zM10 1h5v5h-2V3h-3zM1 10h2v3h3v2H1zM13 10h2v5h-5v-2h3z"/>',
+    exit: '<path d="M4 1h2v5H1V4h3zM10 1h2v3h3v2h-5zM1 10h5v5H4v-3H1zM10 10h5v2h-3v3h-2z"/>',
+    install: '<path d="M7 1h2v7l2.5-2.5L13 7l-5 5-5-5 1.5-1.5L7 8zM2 13h12v2H2z"/>',
+  };
+  function setBtn(b, icon, label) { b.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">${ICON[icon]}</svg><span>${label}</span>`; b.setAttribute('aria-label', label); }
   function syncButtons() {
-    musicBtn.textContent = musicOn ? 'Music on' : 'Music off';
+    setBtn(musicBtn, musicOn ? 'music' : 'mute', musicOn ? 'Music on' : 'Music off');
     musicBtn.setAttribute('aria-pressed', String(musicOn));
-    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    setBtn(pauseBtn, paused ? 'play' : 'pause', paused ? 'Resume' : 'Pause');
+    setBtn(fullBtn, document.fullscreenElement ? 'exit' : 'full', document.fullscreenElement ? 'Exit full' : 'Full screen');
+    setBtn(installBtn, 'install', 'Install');
   }
 
   // iPhone and iPad have no install prompt, so explain the Share menu once.
@@ -677,15 +743,20 @@
   }
 
   // ---------- loop ----------
-  let last = performance.now(), acc = 0;
+  let last = performance.now(), acc = 0, wasPlaying = false;
   const STEP = 1000 / 60;
   function loop(now) {
     acc += Math.min(100, now - last); last = now;
     while (acc >= STEP) { update(); acc -= STEP; }
     runMusic();
     render();
+    const playing = state === 'play' && !paused;
+    if (playing !== wasPlaying) { wasPlaying = playing; root.classList.toggle('playing', playing); }
     requestAnimationFrame(loop);
   }
+
+  // read-only peek for automated tests
+  window.__anteater = () => ({ state, levelIdx, x: P && P.x, y: P && P.y, air: P && P.air, score, paused, mode: MODE });
 
   const hot = window.claude && window.claude.hot;
   if (hot && hot.snapshot) hot.snapshot(() => ({ levelIdx, score, hi, lives, lap, startLevel, musicOn, playing: !['title', 'gameover', 'win'].includes(state) }));

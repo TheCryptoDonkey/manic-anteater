@@ -99,7 +99,7 @@ button {
 button:hover { background: #46395a; }
 button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .notes { grid-area: notes; color: var(--muted); font-size: 12.5px; max-width: 68ch; margin: 0; }
-.pad { display: none; }
+.hint-zone, .stick { display: none; }
 .toast {
   position: fixed;
   z-index: 5;
@@ -121,75 +121,73 @@ button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .toast p { margin: 0; flex: 1; min-width: 0; }
 .toast button { flex: none; }
 
-/* ---- touch devices: a full-viewport app shell ---- */
+/* ---- touch devices: the whole screen is the controller ---- */
+.bar button svg { display: none; width: 16px; height: 16px; }
 html.touch, html.touch body { height: 100%; overflow: hidden; overscroll-behavior: none; }
-html.touch body { padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+html.touch body { padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 html.touch .app {
   position: fixed;
   inset: 0;
   max-width: none;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
   padding: max(6px, env(safe-area-inset-top, 0px)) max(6px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
 }
 html.touch .marquee, html.touch .notes, html.touch .keys { display: none; }
-html.touch .stage { padding: 0; border: 0; border-radius: 0; background: none; align-self: center; }
-html.touch .opts { margin-left: 0; }
-html.touch .opts button { font-size: 9px; padding: 8px 10px 6px; }
-html.touch .pad {
+html.touch .stage { padding: 0; border: 0; border-radius: 0; background: none; }
+html.touch .opts { margin-left: 0; justify-content: center; }
+html.touch .bar button { display: inline-flex; align-items: center; gap: 6px; font-size: 9px; padding: 8px 10px 6px; }
+html.touch .bar button svg { display: block; }
+html.land .app { justify-content: center; }
+html.land .bar { position: absolute; z-index: 3; top: max(6px, env(safe-area-inset-top, 0px)); left: max(4px, env(safe-area-inset-left, 0px)); }
+html.land .opts { flex-direction: column; gap: 6px; }
+html.land .bar button { width: 40px; height: 40px; padding: 0; justify-content: center; }
+html.land .bar button span { display: none; }
+
+/* faint outlines that show where the two halves of the screen do their jobs */
+html.touch .hint-zone {
   display: flex;
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: 18px;
-  background: var(--key);
-  border-bottom: 4px solid #000000;
-  color: var(--ink);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: fixed;
+  z-index: 2;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+  border: 2px solid rgba(236, 229, 211, 0.28);
+  border-radius: 999px;
+  color: rgba(236, 229, 211, 0.55);
   font-family: var(--display);
-  touch-action: none;
-}
-.pad.move .half { flex: 1; display: flex; align-items: center; justify-content: center; }
-.pad.move .half.l { border-right: 2px solid rgba(0, 0, 0, 0.45); }
-.pad.move .half.on { background: var(--key-on); }
-.pad.move svg { width: 30px; height: 30px; }
-.pad .hint {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 8px;
+  font-size: 10px;
   text-align: center;
-  font-family: var(--body);
-  font-size: 11px;
-  color: var(--muted);
+}
+html.touch .hint-zone small { font-family: var(--body); font-size: 10px; color: rgba(236, 229, 211, 0.45); }
+html.touch .hint-zone.move { left: calc(14px + env(safe-area-inset-left, 0px)); width: 150px; height: 64px; }
+html.touch .hint-zone.jump { right: calc(14px + env(safe-area-inset-right, 0px)); width: 84px; height: 84px; }
+html.touch .hint-zone.on { background: rgba(236, 229, 211, 0.1); border-color: rgba(255, 201, 58, 0.55); }
+html.port .hint-zone.move { width: 46vw; height: 110px; }
+html.port .hint-zone.jump { width: 40vw; height: 110px; border-radius: 28px; }
+html.land .hint-zone { opacity: 0.8; transition: opacity 0.6s; }
+/* sideways the outlines sit over the game, so they fade once play starts */
+html.land.playing .hint-zone:not(.on) { opacity: 0; }
+html.touch .stick {
+  display: block;
+  position: fixed;
+  z-index: 4;
+  left: 0;
+  top: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 201, 58, 0.6);
+  background: rgba(255, 201, 58, 0.08);
   pointer-events: none;
 }
-html.touch .pad.jump { align-items: center; justify-content: center; background: var(--jump); font-size: 15px; }
-html.touch .pad.jump.on { background: var(--jump-on); }
-
-/* portrait: screen, toolbar, then the two thumb zones filling the bottom */
-html.port .app {
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  grid-template-areas: "stage stage" "bar bar" "move jump";
-}
-html.port .bar { justify-content: center; }
-html.port .pad { align-self: end; height: 100%; max-height: min(46svh, 440px); }
-.pad.move { grid-area: move; }
-.pad.jump { grid-area: jump; }
-
-/* landscape: thumb zones either side of the screen, toolbar tucked above the walk pad */
-html.land .app {
-  grid-template-columns: var(--side, 140px) minmax(0, 1fr) var(--side, 140px);
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas: "bar stage jump" "move stage jump";
-}
-html.land .stage { grid-row: 1 / span 2; }
-html.land .bar { align-self: start; }
-html.land .opts { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 6px; }
-html.land .opts button { padding: 7px 4px 5px; font-size: 8px; }
-html.land .pad { align-self: end; height: 100%; max-height: 300px; }
-html.land .pad.jump { grid-row: 1 / span 2; }
-
+.stick .knob { position: absolute; left: 20px; top: 20px; width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 201, 58, 0.55); }
 html.touch .toast { bottom: auto; top: calc(10px + env(safe-area-inset-top, 0px)); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -200,21 +198,16 @@ html.touch .toast { bottom: auto; top: calc(10px + env(safe-area-inset-top, 0px)
     <h1>MANIC ANTEATER</h1>
     <p class="tag">10 rooms. Every ant hill. One portal.</p>
   </header>
-  <div class="pad move" id="pad-move" role="group" aria-label="Walk: touch the left or right half, swipe up to jump">
-    <span class="half l" aria-hidden="true"><svg viewBox="0 0 10 10"><path d="M7.5 1 L2 5 L7.5 9 Z" fill="currentColor"/></svg></span>
-    <span class="half r" aria-hidden="true"><svg viewBox="0 0 10 10"><path d="M2.5 1 L8 5 L2.5 9 Z" fill="currentColor"/></svg></span>
-    <span class="hint">swipe up to jump</span>
-  </div>
   <div class="stage" id="stage">
     <canvas id="screen" tabindex="0" aria-label="Manic Anteater game screen"></canvas>
   </div>
-  <div class="pad jump" id="pad-jump" role="button" aria-label="Jump">JUMP</div>
   <div class="bar">
     <span class="keys">
       <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> walk</span>
       <span><kbd>SPACE</kbd> or <kbd>&uarr;</kbd> jump</span>
       <span><kbd>ENTER</kbd> start</span>
       <span><kbd>P</kbd> pause</span>
+      <span><kbd>N</kbd> warp</span>
       <span>Gamepads work too</span>
     </span>
     <span class="opts">
@@ -224,8 +217,11 @@ html.touch .toast { bottom: auto; top: calc(10px + env(safe-area-inset-top, 0px)
       <button type="button" id="btn-install" hidden>Install</button>
     </span>
   </div>
-  <p class="notes">Jumps commit you to an arc, and walking off a ledge drops you straight down. Fall more than eight tiles and you won't get up again. Your energy drains all the time, and whatever's left when you reach the portal is added to your score. After the tenth room the game loops with faster beasts. Install it as an app to play full screen and offline.</p>
+  <p class="notes">Jumps commit you to an arc, and walking off a ledge drops you straight down. Fall more than eight tiles and you won't get up again. Your energy drains all the time, and whatever's left when you reach the portal is added to your score. After the tenth room the game loops with faster beasts. Stuck on a room? Double-click the level name (or press N) to warp to the next one. Install it as an app to play full screen and offline.</p>
 </div>
+<div class="hint-zone move" id="hint-move" aria-hidden="true"><span>&#9664; SLIDE &#9654;</span><small>flick up to jump</small></div>
+<div class="hint-zone jump" id="hint-jump" aria-hidden="true"><span>JUMP</span></div>
+<div class="stick" id="stick" hidden><div class="knob"></div></div>
 <div class="toast" id="toast" hidden>
   <p>To play full screen, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
   <button type="button" id="toast-close">OK</button>
