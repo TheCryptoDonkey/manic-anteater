@@ -1,11 +1,14 @@
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
-/* Layout: one centred arcade cabinet (marquee, screen, control deck) that stacks at phone width. Single dark look by design. */
+/* Layout: desktop is a centred cabinet (marquee, screen, control deck); on touch devices the page becomes a
+   full-viewport app shell, screen on top with thumb zones below in portrait, thumb zones either side in landscape. */
 :root {
   --void: #0b0910;
   --cabinet: #17121f;
   --rim: #2c2338;
   --key: #3a2f4a;
+  --key-on: #5a4a72;
+  --jump: #6b3a1c;
+  --jump-on: #8a4c24;
   --ink: #ece5d3;
   --muted: #a49ab2;
   --amber: #ffc93a;
@@ -23,16 +26,16 @@ body {
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: 18px 28px;
-  touch-action: manipulation;
 }
-.cab {
-  width: min(100%, max(320px, calc((100svh - 190px) * 4 / 3)));
+.app {
+  max-width: 1100px;
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "head" "stage" "bar" "notes";
+  gap: 12px;
 }
-.marquee { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.marquee { grid-area: head; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
 h1 {
   margin: 0;
   font-family: var(--display);
@@ -44,27 +47,29 @@ h1 {
   text-wrap: balance;
 }
 .tag { margin: 0; color: var(--muted); font-size: 13px; }
-.screen {
+.stage {
+  grid-area: stage;
+  justify-self: center;
+  max-width: 100%;
   background: var(--cabinet);
   border: 2px solid var(--rim);
   border-radius: 6px;
-  padding: clamp(6px, 1.4vw, 14px);
+  padding: 10px;
 }
 canvas {
   display: block;
-  width: 100%;
   max-width: 100%;
-  height: auto;
-  aspect-ratio: 4 / 3;
   background: #000000;
   image-rendering: pixelated;
   border-radius: 2px;
   outline: none;
   cursor: pointer;
+  -webkit-touch-callout: none;
 }
 canvas:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.deck { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; color: var(--muted); font-size: 13px; }
-.deck span { display: inline-flex; align-items: center; gap: 6px; }
+.bar { grid-area: bar; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; color: var(--muted); font-size: 13px; }
+.keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.keys span { display: inline-flex; align-items: center; gap: 6px; }
 kbd {
   font-family: var(--body);
   font-weight: 600;
@@ -76,7 +81,7 @@ kbd {
   border-radius: 3px;
   padding: 5px 6px 4px;
 }
-.deck .opts { margin-left: auto; display: inline-flex; gap: 8px; }
+.opts { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 8px; }
 button {
   font-family: var(--display);
   font-size: 10px;
@@ -93,64 +98,135 @@ button {
 }
 button:hover { background: #46395a; }
 button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-.play { display: grid; grid-template-areas: "screen"; gap: 10px; user-select: none; -webkit-user-select: none; }
-.screen { grid-area: screen; min-width: 0; }
-.pad-l, .pad-r { display: none; gap: 10px; }
-.pad-l { grid-area: padl; grid-template-columns: 1fr 1fr; }
-.pad-r { grid-area: padr; }
-.play button { min-height: 72px; font-size: 14px; touch-action: none; -webkit-touch-callout: none; }
-.play button.on { background: #5a4a72; transform: translateY(2px); border-bottom-width: 1px; }
-.play .jump { background: #6b3a1c; }
-.play .jump.on { background: #8a4c24; }
-canvas { -webkit-touch-callout: none; }
-.notes { color: var(--muted); font-size: 12.5px; max-width: 68ch; margin: 0; }
-@media (pointer: coarse) {
-  .pad-l, .pad-r { display: grid; }
-  .play { grid-template-areas: "screen screen" "padl padr"; grid-template-columns: 1.6fr 1fr; }
-  .deck .keys { display: none; }
-  .deck .opts { margin-left: 0; flex-wrap: wrap; }
+.notes { grid-area: notes; color: var(--muted); font-size: 12.5px; max-width: 68ch; margin: 0; }
+.pad { display: none; }
+.toast {
+  position: fixed;
+  z-index: 5;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  background: var(--cabinet);
+  border: 2px solid var(--amber);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 13px;
 }
-/* Phone held sideways: thumbs either side of the screen, nothing else competing for height. */
-@media (pointer: coarse) and (orientation: landscape) {
-  body { padding-block: 8px; }
-  .cab { width: 100%; gap: 8px; }
-  .marquee, .notes { display: none; }
-  .play { grid-template-areas: "padl screen padr"; grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr); align-items: center; }
-  .screen { width: min(62vw, calc((100svh - 104px) * 4 / 3 + 16px)); padding: 6px; }
-  .pad-l { grid-template-columns: 1fr 1fr; }
-  .play button { min-height: min(46svh, 180px); }
-  .deck { justify-content: center; }
-  .deck button { padding: 7px 10px 5px; }
+.toast p { margin: 0; flex: 1; min-width: 0; }
+.toast button { flex: none; }
+
+/* ---- touch devices: a full-viewport app shell ---- */
+html.touch, html.touch body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.touch body { padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+html.touch .app {
+  position: fixed;
+  inset: 0;
+  max-width: none;
+  margin: 0;
+  gap: 8px;
+  padding: max(6px, env(safe-area-inset-top, 0px)) max(6px, env(safe-area-inset-right, 0px)) max(6px, env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
 }
+html.touch .marquee, html.touch .notes, html.touch .keys { display: none; }
+html.touch .stage { padding: 0; border: 0; border-radius: 0; background: none; align-self: center; }
+html.touch .opts { margin-left: 0; }
+html.touch .opts button { font-size: 9px; padding: 8px 10px 6px; }
+html.touch .pad {
+  display: flex;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--key);
+  border-bottom: 4px solid #000000;
+  color: var(--ink);
+  font-family: var(--display);
+  touch-action: none;
+}
+.pad.move .half { flex: 1; display: flex; align-items: center; justify-content: center; }
+.pad.move .half.l { border-right: 2px solid rgba(0, 0, 0, 0.45); }
+.pad.move .half.on { background: var(--key-on); }
+.pad.move svg { width: 30px; height: 30px; }
+.pad .hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  text-align: center;
+  font-family: var(--body);
+  font-size: 11px;
+  color: var(--muted);
+  pointer-events: none;
+}
+html.touch .pad.jump { align-items: center; justify-content: center; background: var(--jump); font-size: 15px; }
+html.touch .pad.jump.on { background: var(--jump-on); }
+
+/* portrait: screen, toolbar, then the two thumb zones filling the bottom */
+html.port .app {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas: "stage stage" "bar bar" "move jump";
+}
+html.port .bar { justify-content: center; }
+html.port .pad { align-self: end; height: 100%; max-height: min(46svh, 440px); }
+.pad.move { grid-area: move; }
+.pad.jump { grid-area: jump; }
+
+/* landscape: thumb zones either side of the screen, toolbar tucked above the walk pad */
+html.land .app {
+  grid-template-columns: var(--side, 140px) minmax(0, 1fr) var(--side, 140px);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "bar stage jump" "move stage jump";
+}
+html.land .stage { grid-row: 1 / span 2; }
+html.land .bar { align-self: start; }
+html.land .opts { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 6px; }
+html.land .opts button { padding: 7px 4px 5px; font-size: 8px; }
+html.land .pad { align-self: end; height: 100%; max-height: 300px; }
+html.land .pad.jump { grid-row: 1 / span 2; }
+
+html.touch .toast { bottom: auto; top: calc(10px + env(safe-area-inset-top, 0px)); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
-<div class="cab">
+<div class="app" id="app">
   <header class="marquee">
     <h1>MANIC ANTEATER</h1>
     <p class="tag">10 rooms. Every ant hill. One portal.</p>
   </header>
-  <div class="play">
-    <div class="pad-l" aria-label="Walk controls">
-      <button type="button" data-k="left" aria-label="Walk left">&#9664;</button>
-      <button type="button" data-k="right" aria-label="Walk right">&#9654;</button>
-    </div>
-    <div class="screen">
-      <canvas id="screen" tabindex="0" aria-label="Manic Anteater game screen"></canvas>
-    </div>
-    <div class="pad-r" aria-label="Jump control">
-      <button type="button" class="jump" data-k="jump">JUMP</button>
-    </div>
+  <div class="pad move" id="pad-move" role="group" aria-label="Walk: touch the left or right half, swipe up to jump">
+    <span class="half l" aria-hidden="true"><svg viewBox="0 0 10 10"><path d="M7.5 1 L2 5 L7.5 9 Z" fill="currentColor"/></svg></span>
+    <span class="half r" aria-hidden="true"><svg viewBox="0 0 10 10"><path d="M2.5 1 L8 5 L2.5 9 Z" fill="currentColor"/></svg></span>
+    <span class="hint">swipe up to jump</span>
   </div>
-  <div class="deck">
-    <span class="keys"><kbd>&larr;</kbd><kbd>&rarr;</kbd> walk</span>
-    <span class="keys"><kbd>SPACE</kbd> or <kbd>&uarr;</kbd> jump</span>
-    <span class="keys"><kbd>ENTER</kbd> start</span>
-    <span class="keys"><kbd>P</kbd> pause</span>
+  <div class="stage" id="stage">
+    <canvas id="screen" tabindex="0" aria-label="Manic Anteater game screen"></canvas>
+  </div>
+  <div class="pad jump" id="pad-jump" role="button" aria-label="Jump">JUMP</div>
+  <div class="bar">
+    <span class="keys">
+      <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> walk</span>
+      <span><kbd>SPACE</kbd> or <kbd>&uarr;</kbd> jump</span>
+      <span><kbd>ENTER</kbd> start</span>
+      <span><kbd>P</kbd> pause</span>
+      <span>Gamepads work too</span>
+    </span>
     <span class="opts">
       <button type="button" id="btn-music" aria-pressed="true">Music on</button>
       <button type="button" id="btn-pause">Pause</button>
       <button type="button" id="btn-full" hidden>Full screen</button>
+      <button type="button" id="btn-install" hidden>Install</button>
     </span>
   </div>
-  <p class="notes">Jumps commit you to an arc, and walking off a ledge drops you straight down. Fall more than eight tiles and you won't get up again. Your energy drains all the time, and whatever's left when you reach the portal is added to your score. After the tenth room the game loops with faster beasts.</p>
+  <p class="notes">Jumps commit you to an arc, and walking off a ledge drops you straight down. Fall more than eight tiles and you won't get up again. Your energy drains all the time, and whatever's left when you reach the portal is added to your score. After the tenth room the game loops with faster beasts. Install it as an app to play full screen and offline.</p>
+</div>
+<div class="toast" id="toast" hidden>
+  <p>To play full screen, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>
+  <button type="button" id="toast-close">OK</button>
 </div>

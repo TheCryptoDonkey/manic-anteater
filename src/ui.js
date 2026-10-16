@@ -1,13 +1,24 @@
 
-// ---- Presentation: rendering, sound, input and the game state machine ----
+// ---- Presentation: layout, rendering, sound, input and the game state machine ----
 (function () {
-  const W = 256, H = 192, S = 4, FIELD_H = 128;
+  const W = 256, S = 4, FIELD_H = 128;
+  // 'tall' is the classic 256x192 screen; 'wide' is 256x144 (16:9) with a two-row status strip,
+  // used whenever it makes the playfield bigger (landscape phones, wide desktop windows).
+  let H = 192, MODE = 'tall';
   const cv = document.getElementById('screen');
-  cv.width = W * S; cv.height = H * S;
   const ctx = cv.getContext('2d');
-  ctx.setTransform(S, 0, 0, S, 0, 0);
-  ctx.imageSmoothingEnabled = false;
+  function setMode(m) {
+    if (m === MODE && cv.width === W * S) return;
+    MODE = m; H = m === 'wide' ? 144 : 192;
+    cv.width = W * S; cv.height = H * S;
+    ctx.setTransform(S, 0, 0, S, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+  }
+  setMode('tall');
   const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const inFrame = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+  const isStandalone = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone === true;
+  let touchUI = false;
 
   // ---------- sprites ----------
   function makeSprite(rows, pal) {
@@ -112,9 +123,10 @@
     ctx.fillStyle = col; ctx.fillText(s, x, y);
   }
   const pad6 = n => String(n).padStart(6, '0');
+  const pad2 = n => String(n).padStart(2, '0');
   const RAINBOW = ['#ff4040', '#ffa040', '#ffff40', '#40ff40', '#40ffff', '#4080ff', '#ff40ff'];
 
-  // ---------- sound ----------
+  // ---------- sound and haptics ----------
   let AC = null, master = null, musicOn = true, nextNote = 0, noteIdx = 0;
   function ensureAudio() {
     if (!AC) {
@@ -143,14 +155,15 @@
     g.gain.setValueAtTime(0.035, t); g.gain.setValueAtTime(0.035, t + dur * 0.75); g.gain.linearRampToValueAtTime(0, t + dur);
     o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.01);
   }
+  function buzz(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* no haptics */ } }
   const sfx = {
     jump: () => tone(260, 620, 0.16, 'square', 0.04),
-    slurp: () => { tone(1400, 160, 0.22, 'sawtooth', 0.05); tone(700, 90, 0.3, 'square', 0.03, 0.05); },
-    open: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.12, 'square', 0.05, i * 0.08)),
-    death: () => tone(700, 50, 0.7, 'sawtooth', 0.07),
+    slurp: () => { tone(1400, 160, 0.22, 'sawtooth', 0.05); tone(700, 90, 0.3, 'square', 0.03, 0.05); buzz(12); },
+    open: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.12, 'square', 0.05, i * 0.08)); buzz([20, 40, 20]); },
+    death: () => { tone(700, 50, 0.7, 'sawtooth', 0.07); buzz([70, 40, 140]); },
     blip: f => tone(f, f, 0.03, 'square', 0.03),
     life: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, f, 0.08, 'square', 0.05, i * 0.06)),
-    stomp: () => { tone(140, 30, 0.5, 'sawtooth', 0.12); tone(90, 40, 0.4, 'square', 0.08, 0.02); },
+    stomp: () => { tone(140, 30, 0.5, 'sawtooth', 0.12); tone(90, 40, 0.4, 'square', 0.08, 0.02); buzz(200); },
     win: () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.16, 'square', 0.05, i * 0.13)),
   };
   // In the Hall of the Mountain King (Grieg, public domain), as a one-channel beeper loop.
@@ -179,6 +192,10 @@
   let score = 0, hi = 0, lives = 3, nextLife = 10000, energy = 1, portalOpen = false, tallyWait = 0;
   let slurp = 0, slurpTarget = null, parts = [];
   const input = { left: false, right: false, jump: false };
+  const keys = { left: false, right: false, jump: false };
+  const touchIn = { left: false, right: false, jump: false };
+  const padIn = { left: false, right: false, jump: false };
+  let swipePulse = 0;
   try { hi = parseInt(localStorage.getItem('manic-anteater-hi') || '0', 10) || 0; } catch (e) { hi = 0; }
   function saveHi() { try { localStorage.setItem('manic-anteater-hi', String(hi)); } catch (e) { /* storage unavailable */ } }
 
@@ -226,8 +243,16 @@
       return Math.abs(s.x - p.x) + Math.abs(s.y - p.y) > 1.5;
     });
   }
+  function readInput() {
+    pollPad();
+    input.left = keys.left || touchIn.left || padIn.left;
+    input.right = keys.right || touchIn.right || padIn.right;
+    input.jump = keys.jump || touchIn.jump || padIn.jump || swipePulse > 0;
+    if (swipePulse > 0) swipePulse--;
+  }
   function update() {
     tick++;
+    readInput();
     if (paused) return;
     stateT++;
     switch (state) {
@@ -259,13 +284,14 @@
   function toTitle() { state = 'title'; stateT = 0; saveHi(); }
   function onStart() {
     ensureAudio();
-    if (paused) { paused = false; return; }
+    if (paused) { paused = false; syncButtons(); return; }
     if (state === 'title') startGame();
     else if (state === 'enter') state = 'play';
     else if (state === 'gameover' && stateT > 70) toTitle();
     else if (state === 'win' && stateT > 60) { lap++; levelIdx = 0; loadLevel(); }
   }
-  function togglePause() { if (state !== 'title' && state !== 'gameover' && state !== 'win') paused = !paused; syncButtons(); }
+  const pausable = () => state !== 'title' && state !== 'gameover' && state !== 'win';
+  function togglePause() { if (pausable()) paused = !paused; syncButtons(); }
   function toggleMusic() { musicOn = !musicOn; syncButtons(); }
   function changeStart(d) { startLevel = (startLevel + d + LEVELS.length) % LEVELS.length; sfx.blip(600); }
 
@@ -345,15 +371,32 @@
     ctx.fillStyle = '#ff4a2a';
     for (const p of parts) if (p.d <= 0) ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
   }
+  function energyBar(x, y, w) {
+    ctx.fillStyle = '#2a0c0c'; ctx.fillRect(x, y, w, 8);
+    const low = energy < 0.2 && Math.floor(tick / 10) % 2;
+    ctx.fillStyle = low ? '#ff4040' : '#f2f2f2'; ctx.fillRect(x + 2, y + 2, Math.round((w - 4) * energy), 4);
+  }
   function drawStatus() {
+    const got = L.hills.filter(h => h.got).length;
+    const hillCol = portalOpen ? '#40ff40' : '#40ffff';
     ctx.fillStyle = '#000000'; ctx.fillRect(0, FIELD_H, W, H - FIELD_H);
+    if (MODE === 'wide') {
+      // two-row strip: energy and level, then score, hills and lives
+      ctx.fillStyle = '#b01c1c'; ctx.fillRect(0, 128, 52, 8);
+      text('ENERGY', 2, 128, '#ffffff');
+      energyBar(52, 128, 164);
+      ctx.fillStyle = L.pal.bar; ctx.fillRect(216, 128, 40, 8);
+      text('L' + pad2(levelIdx + 1), 236, 128, '#000000', 'center');
+      text('SCORE ' + pad6(score), 0, 136, '#ffff40');
+      text(`HILLS ${got}/${L.hills.length}`, 148, 136, hillCol, 'center');
+      text('LIVES ' + lives, 256, 136, '#ffffff', 'right');
+      return;
+    }
     ctx.fillStyle = L.pal.bar; ctx.fillRect(0, 128, W, 9);
     text(L.name.toUpperCase(), 128, 129, '#000000', 'center');
     ctx.fillStyle = '#b01c1c'; ctx.fillRect(0, 139, 56, 8);
     text('ENERGY', 4, 139, '#ffffff');
-    ctx.fillStyle = '#2a0c0c'; ctx.fillRect(56, 139, 200, 8);
-    const low = energy < 0.2 && Math.floor(tick / 10) % 2;
-    ctx.fillStyle = low ? '#ff4040' : '#f2f2f2'; ctx.fillRect(58, 141, Math.round(196 * energy), 4);
+    energyBar(56, 139, 200);
     text('HI ' + pad6(hi), 0, 151, '#ffff40');
     text('SCORE ' + pad6(score), 256, 151, '#ffff40', 'right');
     const shown = Math.min(lives, 8);
@@ -361,10 +404,9 @@
       const f = state === 'play' ? Math.floor((tick + i * 7) / 10) % 2 : 0;
       ctx.drawImage(ANT.R[f], 2 + i * 21, 164);
     }
-    const got = L.hills.filter(h => h.got).length;
-    text(`HILLS ${got}/${L.hills.length}`, 256, 166, portalOpen ? '#40ff40' : '#40ffff', 'right');
-    text(`LEVEL ${String(levelIdx + 1).padStart(2, '0')}/10${lap ? '  LAP ' + (lap + 1) : ''}`, 0, 182, '#8f8f9f');
-    text(musicOn ? 'M:MUSIC ON' : 'M:MUSIC OFF', 256, 182, '#8f8f9f', 'right');
+    text(`HILLS ${got}/${L.hills.length}`, 256, 166, hillCol, 'right');
+    text(`LEVEL ${pad2(levelIdx + 1)}/10${lap ? '  LAP ' + (lap + 1) : ''}`, 0, 182, '#8f8f9f');
+    if (!touchUI) text(musicOn ? 'M:MUSIC ON' : 'M:MUSIC OFF', 256, 182, '#8f8f9f', 'right');
   }
   function panel(lines, y) {
     const h = lines.length * 12 + 10;
@@ -373,25 +415,31 @@
     lines.forEach(([s, c], i) => text(s, 128, y + 6 + i * 12, c, 'center'));
   }
   function drawTitle() {
+    const wide = MODE === 'wide';
+    // y positions for the classic and the 16:9 screen
+    const Y = wide
+      ? { w1: 4, w2: 22, ant: 42, ground: 62, l1: 68, l2: 79, l3: -1, start: 92, name: 103, press: 118, hi: 132 }
+      : { w1: 12, w2: 32, ant: 68, ground: 88, l1: 100, l2: 111, l3: 122, start: 140, name: 151, press: 166, hi: 182 };
     ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, W, H);
     const word = (s, y) => {
-      const w = s.length * 16, x0 = 128 - w / 2;
+      const x0 = 128 - s.length * 8;
       [...s].forEach((ch, i) => text(ch, x0 + i * 16, y, RAINBOW[(i + (reduceMotion ? 0 : Math.floor(tick / 8))) % RAINBOW.length], 'left', 16));
     };
-    word('MANIC', 12); word('ANTEATER', 32);
+    word('MANIC', Y.w1); word('ANTEATER', Y.w2);
     // a short attract loop: the anteater strolls along slurping up a row of hills
     const ax = (tick * 0.7) % 330 - 50;
-    ctx.fillStyle = '#c86428'; ctx.fillRect(0, 88, W, 2);
-    ctx.fillStyle = '#5a2a0a'; ctx.fillRect(0, 90, W, 1);
-    for (const hx of [40, 85, 130, 175, 220]) if (ax + 34 < hx) ctx.drawImage(HILL, hx, 80, 8, 8);
-    ctx.drawImage(ANT.R[Math.floor(tick / 8) % 2], Math.round(ax), 68, 36, 20);
-    text('SLURP UP EVERY ANT HILL,', 128, 100, '#ffffff', 'center');
-    text('THEN DIVE INTO THE PORTAL.', 128, 111, '#ffffff', 'center');
-    text('DODGE THE BEASTS. MIND THE DROP.', 128, 122, '#a0a0b0', 'center');
-    text(`START LEVEL  < ${String(startLevel + 1).padStart(2, '0')} >`, 128, 140, '#40ffff', 'center');
-    text(LEVELS[startLevel].name.toUpperCase(), 128, 151, '#3aa0a0', 'center');
-    if (Math.floor(tick / 30) % 2 === 0 || reduceMotion) text('PRESS ENTER OR TAP TO PLAY', 128, 166, '#ffff40', 'center');
-    text('HI-SCORE ' + pad6(hi), 128, 182, '#ff8040', 'center');
+    ctx.fillStyle = '#c86428'; ctx.fillRect(0, Y.ground, W, 2);
+    ctx.fillStyle = '#5a2a0a'; ctx.fillRect(0, Y.ground + 2, W, 1);
+    for (const hx of [40, 85, 130, 175, 220]) if (ax + 34 < hx) ctx.drawImage(HILL, hx, Y.ground - 8, 8, 8);
+    ctx.drawImage(ANT.R[Math.floor(tick / 8) % 2], Math.round(ax), Y.ant, 36, 20);
+    text('SLURP UP EVERY ANT HILL,', 128, Y.l1, '#ffffff', 'center');
+    text('THEN DIVE INTO THE PORTAL.', 128, Y.l2, '#ffffff', 'center');
+    if (Y.l3 > 0) text('DODGE THE BEASTS. MIND THE DROP.', 128, Y.l3, '#a0a0b0', 'center');
+    text(`START LEVEL  < ${pad2(startLevel + 1)} >`, 128, Y.start, '#40ffff', 'center');
+    text(LEVELS[startLevel].name.toUpperCase(), 128, Y.name, '#3aa0a0', 'center');
+    const prompt = touchUI ? 'TAP JUMP TO PLAY' : 'PRESS ENTER OR TAP TO PLAY';
+    if (Math.floor(tick / 30) % 2 === 0 || reduceMotion) text(prompt, 128, Y.press, '#ffff40', 'center');
+    text('HI-SCORE ' + pad6(hi), 128, Y.hi, '#ff8040', 'center');
   }
   function drawBoot(x, y) {
     ctx.fillStyle = '#7a4a22'; ctx.fillRect(x + 6, y, 12, 15); ctx.fillRect(x, y + 13, 24, 7);
@@ -424,7 +472,7 @@
     const bob = reduceMotion ? 0 : Math.round(Math.sin(tick / 8) * 3);
     ctx.drawImage(ANT.R[Math.floor(tick / 8) % 2], 110, 50 + bob, 36, 20);
     text('BONUS 5000', 128, 84, '#40ff40', 'center');
-    text(`ENTER: LAP ${lap + 2}, FASTER BEASTS`, 128, 104, '#40ffff', 'center');
+    text(`${touchUI ? 'JUMP' : 'ENTER'}: LAP ${lap + 2}, FASTER BEASTS`, 128, 104, '#40ffff', 'center');
     drawStatus();
   }
   function render() {
@@ -439,70 +487,193 @@
     }
     if (state === 'enter') panel([[L.name.toUpperCase(), '#ffff40'], [`LEVEL ${levelIdx + 1} OF 10`, '#ffffff'], [Math.floor(stateT / 8) % 2 ? 'GET READY' : '', '#40ffff']], 40);
     if (state === 'tally' && energy <= 0) panel([['LEVEL CLEARED!', '#40ff40']], 52);
-    if (paused) panel([['PAUSED', '#ffff40'], ['P OR ENTER TO RESUME', '#ffffff']], 46);
+    if (paused) panel([['PAUSED', '#ffff40'], [touchUI ? 'TAP JUMP TO RESUME' : 'P OR ENTER TO RESUME', '#ffffff']], 46);
     drawStatus();
   }
 
-  // ---------- input ----------
+  // ---------- layout: fit the screen to whatever the device gives us ----------
+  const root = document.documentElement;
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;top:0;left:0;' +
+    'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+  document.body.appendChild(probe);
+  function insets() {
+    const s = getComputedStyle(probe);
+    return { t: parseFloat(s.paddingTop) || 0, r: parseFloat(s.paddingRight) || 0, b: parseFloat(s.paddingBottom) || 0, l: parseFloat(s.paddingLeft) || 0 };
+  }
+  function layout() {
+    touchUI = matchMedia('(pointer: coarse)').matches;
+    const vw = window.innerWidth, vh = window.innerHeight, I = insets();
+    const land = vw > vh;
+    root.classList.toggle('touch', touchUI);
+    root.classList.toggle('land', touchUI && land);
+    root.classList.toggle('port', touchUI && !land);
+    root.classList.toggle('installed', isStandalone());
+    let aw, ah;
+    if (touchUI && land) {
+      const side = Math.round(Math.min(190, Math.max(100, vw * 0.14)));
+      root.style.setProperty('--side', side + 'px');
+      aw = vw - Math.max(6, I.l) - Math.max(6, I.r) - 2 * side - 16;
+      ah = vh - Math.max(6, I.t) - Math.max(6, I.b);
+    } else if (touchUI) {
+      const controls = Math.max(220, vh * 0.3);
+      aw = vw - Math.max(6, I.l) - Math.max(6, I.r);
+      ah = vh - Math.max(6, I.t) - Math.max(6, I.b) - controls - 52;
+    } else {
+      aw = Math.min(1100, vw - 32) - 24;
+      ah = vh - 210;
+    }
+    aw = Math.max(200, aw); ah = Math.max(140, ah);
+    // 'wide' only when it actually makes the playfield bigger
+    const sTall = Math.min(aw / 256, ah / 192), sWide = Math.min(aw / 256, ah / 144);
+    setMode(sWide > sTall * 1.04 ? 'wide' : 'tall');
+    const s = MODE === 'wide' ? sWide : sTall;
+    cv.style.width = Math.floor(256 * s) + 'px';
+    cv.style.height = Math.floor(H * s) + 'px';
+  }
+  let layoutQueued = false;
+  function queueLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(() => { layoutQueued = false; layout(); }); }
+  addEventListener('resize', queueLayout);
+  addEventListener('orientationchange', () => setTimeout(layout, 120));
+  if (window.visualViewport) visualViewport.addEventListener('resize', queueLayout);
+
+  // ---------- input: keyboard ----------
   const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'jump', ArrowUp: 'jump', KeyW: 'jump' };
   addEventListener('keydown', e => {
     ensureAudio();
     const k = KEYS[e.code];
-    if (k) { input[k] = true; e.preventDefault(); }
+    if (k) { keys[k] = true; e.preventDefault(); }
     if (e.repeat) return;
     if (e.code === 'Enter' || (e.code === 'Space' && state !== 'play' && state !== 'enter')) { onStart(); e.preventDefault(); }
     else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
     else if (e.code === 'KeyM') toggleMusic();
     if (state === 'title' && (k === 'left' || k === 'right')) changeStart(k === 'left' ? -1 : 1);
   });
-  addEventListener('keyup', e => { const k = KEYS[e.code]; if (k) input[k] = false; });
-  function releaseAll() { input.left = input.right = input.jump = false; document.querySelectorAll('[data-k]').forEach(b => b.classList.remove('on')); }
-  addEventListener('blur', () => { releaseAll(); if (state === 'play') { paused = true; syncButtons(); } });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { releaseAll(); if (state === 'play') { paused = true; syncButtons(); } } });
-  cv.addEventListener('pointerdown', () => { cv.focus(); if (state !== 'play' || paused) onStart(); });
+  addEventListener('keyup', e => { const k = KEYS[e.code]; if (k) keys[k] = false; });
 
-  document.querySelectorAll('[data-k]').forEach(b => {
-    const k = b.dataset.k;
-    const down = e => {
-      e.preventDefault(); ensureAudio();
-      try { b.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
-      b.classList.add('on');
-      if (state === 'title' && k !== 'jump') { changeStart(k === 'left' ? -1 : 1); return; }
-      if (k === 'jump' && (state !== 'play' || paused)) onStart();
-      input[k] = true;
-    };
-    const up = e => { e.preventDefault(); b.classList.remove('on'); input[k] = false; };
-    b.addEventListener('pointerdown', down);
-    b.addEventListener('pointerup', up);
-    b.addEventListener('pointercancel', up);
-    b.addEventListener('lostpointercapture', up);
-    b.addEventListener('contextmenu', e => e.preventDefault());
+  // ---------- input: touch ----------
+  // The walk pad is one surface: slide between halves without lifting, swipe up to jump in that direction.
+  const moveEl = document.getElementById('pad-move'), jumpEl = document.getElementById('pad-jump');
+  const halves = { l: moveEl.querySelector('.l'), r: moveEl.querySelector('.r') };
+  const movePtr = new Map(), jumpPtr = new Set();
+  const dirAt = e => { const r = moveEl.getBoundingClientRect(); return e.clientX < r.left + r.width / 2 ? -1 : 1; };
+  function syncMove() {
+    let l = false, r = false;
+    for (const p of movePtr.values()) { if (p.dir < 0) l = true; else r = true; }
+    touchIn.left = l; touchIn.right = r;
+    halves.l.classList.toggle('on', l); halves.r.classList.toggle('on', r);
+  }
+  moveEl.addEventListener('pointerdown', e => {
+    e.preventDefault(); ensureAudio();
+    try { moveEl.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
+    const d = dirAt(e);
+    movePtr.set(e.pointerId, { dir: d, y0: e.clientY });
+    if (state === 'title') changeStart(d);
+    syncMove();
   });
-  const musicBtn = document.getElementById('btn-music'), pauseBtn = document.getElementById('btn-pause');
-  musicBtn.addEventListener('click', () => { ensureAudio(); toggleMusic(); });
-  pauseBtn.addEventListener('click', () => { ensureAudio(); if (paused) paused = false; else togglePause(); syncButtons(); });
-  const fullBtn = document.getElementById('btn-full');
-  const fsEl = document.documentElement;
-  if (document.fullscreenEnabled && fsEl.requestFullscreen) fullBtn.hidden = false;
-  fullBtn.addEventListener('click', () => {
-    ensureAudio();
-    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
-    fsEl.requestFullscreen().then(() => {
-      try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* orientation lock unsupported */ }
-    }).catch(() => { fullBtn.hidden = true; });
+  moveEl.addEventListener('pointermove', e => {
+    const p = movePtr.get(e.pointerId);
+    if (!p) return;
+    p.dir = dirAt(e);
+    if (p.y0 - e.clientY > 28) { if (state === 'play' && !paused) swipePulse = 6; p.y0 = e.clientY; }
+    else if (e.clientY > p.y0) p.y0 = e.clientY;
+    syncMove();
   });
-  document.addEventListener('fullscreenchange', () => { fullBtn.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen'; });
-  // Keep the phone's screen awake during a game; ignored where the browser refuses.
+  const moveUp = e => { movePtr.delete(e.pointerId); syncMove(); };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => moveEl.addEventListener(t, moveUp));
+  jumpEl.addEventListener('pointerdown', e => {
+    e.preventDefault(); ensureAudio();
+    if (paused || (state !== 'play' && state !== 'enter')) { onStart(); return; }
+    if (state === 'enter') state = 'play';
+    try { jumpEl.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
+    jumpPtr.add(e.pointerId); touchIn.jump = true; jumpEl.classList.add('on');
+  });
+  const jumpUp = e => { jumpPtr.delete(e.pointerId); touchIn.jump = jumpPtr.size > 0; jumpEl.classList.toggle('on', touchIn.jump); };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => jumpEl.addEventListener(t, jumpUp));
+  [moveEl, jumpEl].forEach(el => el.addEventListener('contextmenu', e => e.preventDefault()));
+  cv.addEventListener('pointerdown', () => { cv.focus({ preventScroll: true }); if (state !== 'play' || paused) onStart(); });
+
+  // ---------- input: gamepad ----------
+  let padPrev = { start: false, jump: false, left: false, right: false };
+  function pollPad() {
+    padIn.left = padIn.right = padIn.jump = false;
+    let start = false;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const gp of pads) {
+      if (!gp) continue;
+      const b = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+      const ax = gp.axes[0] || 0;
+      padIn.left = padIn.left || ax < -0.45 || b(14);
+      padIn.right = padIn.right || ax > 0.45 || b(15);
+      padIn.jump = padIn.jump || b(0) || b(1) || b(12);
+      start = start || b(9);
+    }
+    if (start && !padPrev.start) { if (paused || !pausable() || state === 'enter') onStart(); else togglePause(); }
+    if (padIn.jump && !padPrev.jump && (state !== 'play' || paused) && state !== 'enter') onStart();
+    if (state === 'title') {
+      if (padIn.left && !padPrev.left) changeStart(-1);
+      if (padIn.right && !padPrev.right) changeStart(1);
+    }
+    padPrev = { start, jump: padIn.jump, left: padIn.left, right: padIn.right };
+  }
+
+  // ---------- focus, pausing and wake lock ----------
+  function releaseAll() {
+    keys.left = keys.right = keys.jump = false;
+    movePtr.clear(); jumpPtr.clear(); syncMove(); touchIn.jump = false; jumpEl.classList.remove('on');
+  }
+  function autoPause() { releaseAll(); if (state === 'play') { paused = true; syncButtons(); } }
+  addEventListener('blur', autoPause);
   let wakeLock = null;
   function keepAwake() {
     if (wakeLock || !navigator.wakeLock || document.hidden) return;
     navigator.wakeLock.request('screen').then(l => { wakeLock = l; l.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
   }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && state !== 'title') keepAwake(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) autoPause();
+    else if (state !== 'title') keepAwake();
+  });
+
+  // ---------- toolbar: music, pause, full screen, install ----------
+  const $ = id => document.getElementById(id);
+  const musicBtn = $('btn-music'), pauseBtn = $('btn-pause'), fullBtn = $('btn-full'), installBtn = $('btn-install');
+  musicBtn.addEventListener('click', () => { ensureAudio(); toggleMusic(); });
+  pauseBtn.addEventListener('click', () => { ensureAudio(); if (paused) { paused = false; syncButtons(); } else togglePause(); });
+  if (document.fullscreenEnabled && root.requestFullscreen && !isStandalone()) fullBtn.hidden = false;
+  fullBtn.addEventListener('click', () => {
+    ensureAudio();
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    root.requestFullscreen({ navigationUI: 'hide' }).catch(() => { fullBtn.hidden = true; });
+  });
+  document.addEventListener('fullscreenchange', () => { fullBtn.textContent = document.fullscreenElement ? 'Exit full' : 'Full screen'; queueLayout(); });
+  let installEvt = null;
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installBtn.hidden = false; });
+  installBtn.addEventListener('click', () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    Promise.resolve(installEvt.userChoice).catch(() => {}).then(() => { installEvt = null; installBtn.hidden = true; });
+  });
+  addEventListener('appinstalled', () => { installBtn.hidden = true; });
   function syncButtons() {
     musicBtn.textContent = musicOn ? 'Music on' : 'Music off';
     musicBtn.setAttribute('aria-pressed', String(musicOn));
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  }
+
+  // iPhone and iPad have no install prompt, so explain the Share menu once.
+  const toast = $('toast');
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let toastSeen = false;
+  try { toastSeen = localStorage.getItem('manic-anteater-ios-tip') === '1'; } catch (e) { toastSeen = false; }
+  if (isIOS && !inFrame && !isStandalone() && !toastSeen) toast.hidden = false;
+  $('toast-close').addEventListener('click', () => {
+    toast.hidden = true;
+    try { localStorage.setItem('manic-anteater-ios-tip', '1'); } catch (e) { /* storage unavailable */ }
+  });
+
+  // Offline support when served as a site (not inside an embedded preview).
+  if (!inFrame && 'serviceWorker' in navigator && location.protocol === 'https:') {
+    addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
   }
 
   // ---------- loop ----------
@@ -530,6 +701,7 @@
       nextLife = (Math.floor(score / 10000) + 1) * 10000;
       loadLevel();
     }
+    layout();
     syncButtons();
     requestAnimationFrame(t => { last = t; loop(t); });
   }
