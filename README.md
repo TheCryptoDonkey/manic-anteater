@@ -46,7 +46,7 @@ src/ui.js           rendering, sound, input and the game state machine
 src/page.html       page markup and styles
 src/sw.js           service worker source
 tools/build.js      assembles index.html and sw.js; --check fails if either is stale
-tools/validate.js   searches every level with the real physics to prove each hill and portal is reachable
+tools/validate.js   searches every level with the real physics: each hill and the portal must be reachable, and no reachable spot may be a dead end
 ```
 
 After editing anything in `src/`, run:
